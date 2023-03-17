@@ -692,6 +692,7 @@ func (s *Server) register(sd *ServiceDesc, ss interface{}) {
 		streams:     make(map[string]*StreamDesc),
 		mdata:       sd.Metadata,
 	}
+	// ???
 	for i := range sd.Methods {
 		d := &sd.Methods[i]
 		info.methods[d.MethodName] = d
@@ -876,6 +877,7 @@ func (s *Server) handleRawConn(lisAddr string, rawConn net.Conn) {
 		rawConn.Close()
 		return
 	}
+	// 设置超时
 	rawConn.SetDeadline(time.Now().Add(s.opts.connectionTimeout))
 
 	// Finish handshaking (HTTP2)

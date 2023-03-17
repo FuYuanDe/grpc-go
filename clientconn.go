@@ -164,6 +164,7 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 		opt.apply(&cc.dopts)
 	}
 
+	/// TODO
 	chainUnaryClientInterceptors(cc)
 	chainStreamClientInterceptors(cc)
 
@@ -224,6 +225,7 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 		cc.dopts.copts.UserAgent = grpcUA
 	}
 
+	// 超时
 	if cc.dopts.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, cc.dopts.timeout)
@@ -257,15 +259,18 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 		default:
 		}
 	}
+	/// TODO 默认的重试策略
 	if cc.dopts.bs == nil {
 		cc.dopts.bs = backoff.DefaultExponential
 	}
 
 	// Determine the resolver to use.
+	// 服务发现 没有scheme则返回默认的passthrough
 	resolverBuilder, err := cc.parseTargetAndFindResolver()
 	if err != nil {
 		return nil, err
 	}
+	// TODO
 	cc.authority, err = determineAuthority(cc.parsedTarget.Endpoint(), cc.target, cc.dopts)
 	if err != nil {
 		return nil, err
@@ -292,6 +297,8 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 	if creds := cc.dopts.copts.TransportCredentials; creds != nil {
 		credsClone = creds.Clone()
 	}
+
+	// 负载均衡
 	cc.balancerWrapper = newCCBalancerWrapper(cc, balancer.BuildOptions{
 		DialCreds:        credsClone,
 		CredsBundle:      cc.dopts.copts.CredsBundle,
@@ -303,6 +310,7 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 	})
 
 	// Build the resolver.
+	// 服务发现 初始化
 	rWrapper, err := newCCResolverWrapper(cc, resolverBuilder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build resolver: %v", err)
@@ -474,7 +482,7 @@ var _ ClientConnInterface = (*ClientConn)(nil)
 // resolution, TCP connection establishment (with retries and backoff) and TLS
 // handshakes. It also handles errors on established connections by
 // re-resolving the name and reconnecting.
-type ClientConn struct {
+type ClientConn struct { // 一个虚拟连接，连接到实际的服务端节点。完成实际的请求。
 	ctx    context.Context    // Initialized using the background context at dial time.
 	cancel context.CancelFunc // Cancelled on close.
 
@@ -488,8 +496,8 @@ type ClientConn struct {
 
 	// The following provide their own synchronization, and therefore don't
 	// require cc.mu to be held to access them.
-	csMgr              *connectivityStateManager
-	blockingpicker     *pickerWrapper
+	csMgr              *connectivityStateManager // 链接管理器
+	blockingpicker     *pickerWrapper            // 和负载均衡有关
 	safeConfigSelector iresolver.SafeConfigSelector
 	czData             *channelzData
 	retryThrottler     atomic.Value // Updated from service config.
@@ -612,8 +620,11 @@ func (cc *ClientConn) maybeApplyDefaultServiceConfig(addrs []resolver.Address) {
 	}
 }
 
+// 更新服务发现状态
 func (cc *ClientConn) updateResolverState(s resolver.State, err error) error {
+	// 首次信号
 	defer cc.firstResolveEvent.Fire()
+
 	cc.mu.Lock()
 	// Check if the ClientConn is already closed. Some fields (e.g.
 	// balancerWrapper) are set to nil when closing the ClientConn, and could
@@ -1565,10 +1576,13 @@ func (cc *ClientConn) parseTargetAndFindResolver() (resolver.Builder, error) {
 	channelz.Infof(logger, cc.channelzID, "original dial target is: %q", cc.target)
 
 	var rb resolver.Builder
+
+	// 地址解析
 	parsedTarget, err := parseTarget(cc.target)
 	if err != nil {
 		channelz.Infof(logger, cc.channelzID, "dial target %q parse failed: %v", cc.target, err)
 	} else {
+		// TODO
 		channelz.Infof(logger, cc.channelzID, "parsed dial target is: %+v", parsedTarget)
 		rb = cc.getResolver(parsedTarget.URL.Scheme)
 		if rb != nil {

@@ -46,6 +46,7 @@ type ccResolverWrapper struct {
 // newCCResolverWrapper uses the resolver.Builder to build a Resolver and
 // returns a ccResolverWrapper object which wraps the newly built resolver.
 func newCCResolverWrapper(cc *ClientConn, rb resolver.Builder) (*ccResolverWrapper, error) {
+	// client connection resolver wrapper
 	ccr := &ccResolverWrapper{
 		cc:   cc,
 		done: grpcsync.NewEvent(),
@@ -94,6 +95,8 @@ func (ccr *ccResolverWrapper) close() {
 func (ccr *ccResolverWrapper) UpdateState(s resolver.State) error {
 	ccr.incomingMu.Lock()
 	defer ccr.incomingMu.Unlock()
+
+	// 是否处理过
 	if ccr.done.HasFired() {
 		return nil
 	}

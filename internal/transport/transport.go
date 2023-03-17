@@ -581,7 +581,7 @@ type ConnectOptions struct {
 	// TransportCredentials and CredsBundle is non-nil.
 	CredsBundle credentials.Bundle
 	// KeepaliveParams stores the keepalive parameters.
-	KeepaliveParams keepalive.ClientParameters
+	KeepaliveParams keepalive.ClientParameters // 保活
 	// StatsHandlers stores the handler for stats.
 	StatsHandlers []stats.Handler
 	// InitialWindowSize sets the initial window size for a stream.

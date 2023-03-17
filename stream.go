@@ -190,6 +190,8 @@ func newClientStream(ctx context.Context, desc *StreamDesc, cc *ClientConn, meth
 			}
 		}()
 	}
+
+	// 等待地址解析完成
 	// Provide an opportunity for the first RPC to see the first service config
 	// provided by the resolver.
 	if err := cc.waitForResolvedAddrs(ctx); err != nil {
@@ -265,8 +267,13 @@ func newClientStreamWithParams(ctx context.Context, desc *StreamDesc, cc *Client
 			return nil, toRPCErr(err)
 		}
 	}
+
+	// defaultClientMaxSendMessageSize 整型最大值
 	c.maxSendMessageSize = getMaxSize(mc.MaxReqSize, c.maxSendMessageSize, defaultClientMaxSendMessageSize)
+	// 默认4M
 	c.maxReceiveMessageSize = getMaxSize(mc.MaxRespSize, c.maxReceiveMessageSize, defaultClientMaxReceiveMessageSize)
+
+	// 设置编解码(序列化)
 	if err := setCallInfoCodec(c); err != nil {
 		return nil, err
 	}
@@ -278,6 +285,7 @@ func newClientStreamWithParams(ctx context.Context, desc *StreamDesc, cc *Client
 		DoneFunc:       doneFunc,
 	}
 
+	// 压缩
 	// Set our outgoing compression according to the UseCompressor CallOption, if
 	// set.  In that case, also find the compressor from the encoding package.
 	// Otherwise, use the compressor configured by the WithCompressor DialOption,

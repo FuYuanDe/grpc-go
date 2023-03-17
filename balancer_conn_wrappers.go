@@ -269,6 +269,7 @@ func (ccb *ccBalancerWrapper) handleSwitchTo(name string) {
 	builder := balancer.Get(name)
 	if builder == nil {
 		channelz.Warningf(logger, ccb.cc.channelzID, "Channel switches to new LB policy %q, since the specified LB policy %q was not registered", PickFirstBalancerName, name)
+		// 默认使用pick first balancer
 		builder = newPickfirstBuilder()
 	} else {
 		channelz.Infof(logger, ccb.cc.channelzID, "Channel switches to new LB policy %q", name)

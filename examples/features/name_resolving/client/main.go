@@ -79,6 +79,7 @@ func main() {
 	}
 	defer exampleConn.Close()
 
+	time.Sleep(time.Second * 3)
 	fmt.Printf("--- calling helloworld.Greeter/SayHello to \"%s:///%s\"\n", exampleScheme, exampleServiceName)
 	makeRPCs(exampleConn, 10)
 }
@@ -124,6 +125,7 @@ func (r *exampleResolver) start() {
 	for i, s := range addrStrs {
 		addrs[i] = resolver.Address{Addr: s}
 	}
+	fmt.Printf("addrs%v\n", addrs)
 	r.cc.UpdateState(resolver.State{Addresses: addrs})
 }
 func (*exampleResolver) ResolveNow(o resolver.ResolveNowOptions) {}

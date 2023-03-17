@@ -51,18 +51,18 @@ func init() {
 // dialOptions configure a Dial call. dialOptions are set by the DialOption
 // values passed to Dial.
 type dialOptions struct {
-	unaryInt  UnaryClientInterceptor
-	streamInt StreamClientInterceptor
+	unaryInt  UnaryClientInterceptor  // unary client拦截器
+	streamInt StreamClientInterceptor // 流式client拦截器
 
 	chainUnaryInts  []UnaryClientInterceptor
 	chainStreamInts []StreamClientInterceptor
 
-	cp                          Compressor
-	dc                          Decompressor
-	bs                          internalbackoff.Strategy
-	block                       bool
+	cp                          Compressor               // 压缩器
+	dc                          Decompressor             // 解压器
+	bs                          internalbackoff.Strategy // 失败重试策略
+	block                       bool                     // 阻塞标志位
 	returnLastError             bool
-	timeout                     time.Duration
+	timeout                     time.Duration // 超时
 	scChan                      <-chan ServiceConfig
 	authority                   string
 	binaryLogger                binarylog.Logger
@@ -76,7 +76,7 @@ type dialOptions struct {
 	minConnectTimeout           func() time.Duration
 	defaultServiceConfig        *ServiceConfig // defaultServiceConfig is parsed from defaultServiceConfigRawJSON.
 	defaultServiceConfigRawJSON *string
-	resolvers                   []resolver.Builder
+	resolvers                   []resolver.Builder // 名字解析
 }
 
 // DialOption configures how we set up the connection.
