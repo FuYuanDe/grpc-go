@@ -164,7 +164,7 @@ type callInfo struct {
 
 func defaultCallInfo() *callInfo {
 	return &callInfo{
-		failFast:              true,
+		failFast:              true,       // 有何用
 		maxRetryRPCBufferSize: 256 * 1024, // 256KB
 	}
 }

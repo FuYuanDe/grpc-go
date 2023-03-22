@@ -887,6 +887,7 @@ func (s *Server) handleRawConn(lisAddr string, rawConn net.Conn) {
 		return
 	}
 
+	// 记录当前连接对应的子链接
 	if !s.addConn(lisAddr, st) {
 		return
 	}
@@ -951,6 +952,7 @@ func (s *Server) serveStreams(st transport.ServerTransport) {
 	var roundRobinCounter uint32
 	st.HandleStreams(func(stream *transport.Stream) {
 		wg.Add(1)
+		// 限定worker数量???
 		if s.opts.numServerWorkers > 0 {
 			data := &serverWorkerData{st: st, wg: &wg, stream: stream}
 			select {

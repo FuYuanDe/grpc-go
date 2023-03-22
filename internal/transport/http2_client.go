@@ -200,6 +200,7 @@ func newHTTP2Client(connectCtx, ctx context.Context, addr resolver.Address, opts
 	scheme := "http"
 	ctx, cancel := context.WithCancel(ctx)
 	defer func() {
+		// 异常则cancel 子context
 		if err != nil {
 			cancel()
 		}
@@ -211,6 +212,7 @@ func newHTTP2Client(connectCtx, ctx context.Context, addr resolver.Address, opts
 	// address specific arbitrary data to reach custom dialers and credential handshakers.
 	connectCtx = icredentials.NewClientHandshakeInfoContext(connectCtx, credentials.ClientHandshakeInfo{Attributes: addr.Attributes})
 
+	// 创建连接
 	conn, err := dial(connectCtx, opts.Dialer, addr, opts.UseProxy, opts.UserAgent)
 	if err != nil {
 		if opts.FailOnNonTempDialError {
@@ -402,6 +404,7 @@ func newHTTP2Client(connectCtx, ctx context.Context, addr resolver.Address, opts
 	}()
 
 	// Send connection preface to server.
+	// 发送 connection preface
 	n, err := t.conn.Write(clientPreface)
 	if err != nil {
 		err = connectionErrorf(true, err, "transport: failed to write client preface: %v", err)
@@ -1245,6 +1248,7 @@ func (t *http2Client) handleSettings(f *http2.SettingsFrame, isFirst bool) {
 	}, sf)
 }
 
+// 处理ping
 func (t *http2Client) handlePing(f *http2.PingFrame) {
 	if f.IsAck() {
 		// Maybe it's a BDP ping.
@@ -1258,6 +1262,7 @@ func (t *http2Client) handlePing(f *http2.PingFrame) {
 	t.controlBuf.put(pingAck)
 }
 
+// 处理goaway
 func (t *http2Client) handleGoAway(f *http2.GoAwayFrame) {
 	t.mu.Lock()
 	if t.state == closing {

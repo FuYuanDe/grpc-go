@@ -43,7 +43,7 @@ const (
 func unaryCallWithMetadata(c pb.EchoClient, message string) {
 	fmt.Printf("--- unary ---\n")
 	// Create metadata and context.
-	md := metadata.Pairs("timestamp", time.Now().Format(timestampFormat))
+	md := metadata.Pairs("timestamp", time.Now().Format(timestampFormat), "author", "masonfu")
 	ctx := metadata.NewOutgoingContext(context.Background(), md)
 
 	// Make RPC using the context with the metadata.
@@ -295,14 +295,15 @@ func main() {
 
 	c := pb.NewEchoClient(conn)
 
-	unaryCallWithMetadata(c, message)
-	time.Sleep(1 * time.Second)
+	//unaryCallWithMetadata(c, message)
+	//time.Sleep(1 * time.Second)
 
 	serverStreamingWithMetadata(c, message)
 	time.Sleep(1 * time.Second)
 
-	clientStreamWithMetadata(c, message)
-	time.Sleep(1 * time.Second)
+	//	clientStreamWithMetadata(c, message)
+	//	time.Sleep(1 * time.Second)
 
-	bidirectionalWithMetadata(c, message)
+	//	bidirectionalWithMetadata(c, message)
+
 }

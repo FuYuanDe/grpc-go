@@ -84,6 +84,8 @@ func Get(name string) Builder {
 // connecting, Balancers must call Connect.  If a connection re-enters IDLE,
 // Balancers must call Connect again to trigger a new connection attempt.
 //
+// grpc按顺序尝试连接，如果有成功则停止，如果都不成功，则进入到TRANSIENT_FAILURE状态。
+//
 // gRPC will try to connect to the addresses in sequence, and stop trying the
 // remainder once the first connection is successful. If an attempt to connect
 // to all addresses encounters an error, the SubConn will enter

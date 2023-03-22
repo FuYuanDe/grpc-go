@@ -138,7 +138,7 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 		csMgr:             &connectivityStateManager{},
 		conns:             make(map[*addrConn]struct{}),
 		dopts:             defaultDialOptions(),
-		blockingpicker:    newPickerWrapper(),
+		blockingpicker:    newPickerWrapper(), // 在哪里赋值
 		czData:            new(channelzData),
 		firstResolveEvent: grpcsync.NewEvent(),
 	}
@@ -298,7 +298,7 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 		credsClone = creds.Clone()
 	}
 
-	// 负载均衡
+	// 负载均衡 启动一个监听线程
 	cc.balancerWrapper = newCCBalancerWrapper(cc, balancer.BuildOptions{
 		DialCreds:        credsClone,
 		CredsBundle:      cc.dopts.copts.CredsBundle,

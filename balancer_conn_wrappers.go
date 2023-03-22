@@ -82,26 +82,32 @@ func newCCBalancerWrapper(cc *ClientConn, bopts balancer.BuildOptions) *ccBalanc
 // corresponding update. The watcher goroutine uses the 'type' of the update to
 // invoke the appropriate handler routine to handle the update.
 
+// 客户端连接状态变更
 type ccStateUpdate struct {
 	ccs *balancer.ClientConnState
 }
 
+// 子连接状态变更
 type scStateUpdate struct {
 	sc    balancer.SubConn
 	state connectivity.State
 	err   error
 }
 
+// 退出idle状态，为啥不需要个子链接参数呢
 type exitIdleUpdate struct{}
 
+// 解析失败类型
 type resolverErrorUpdate struct {
 	err error
 }
 
+// 变更服务发现
 type switchToUpdate struct {
 	name string
 }
 
+// 子连接变更 这里会出现啥情况
 type subConnUpdate struct {
 	acbw *acBalancerWrapper
 }
@@ -110,6 +116,7 @@ type subConnUpdate struct {
 // invokes corresponding methods on the underlying balancer. It ensures that
 // these methods are invoked in a synchronous fashion. It also ensures that
 // these methods are invoked in the order in which the updates were received.
+// 串行顺序处理消息
 func (ccb *ccBalancerWrapper) watcher() {
 	for {
 		select {
@@ -177,6 +184,7 @@ func (ccb *ccBalancerWrapper) updateClientConnState(ccs *balancer.ClientConnStat
 // If the addresses specified in the update contain addresses of type "grpclb"
 // and the selected LB policy is not "grpclb", these addresses will be filtered
 // out and ccs will be modified with the updated address list.
+// 服务发现解析地址
 func (ccb *ccBalancerWrapper) handleClientConnStateChange(ccs *balancer.ClientConnState) {
 	if ccb.curBalancerName != grpclbName {
 		// Filter any grpclb addresses since we don't have the grpclb balancer.
@@ -194,6 +202,7 @@ func (ccb *ccBalancerWrapper) handleClientConnStateChange(ccs *balancer.ClientCo
 
 // updateSubConnState is invoked by grpc to push a subConn state update to the
 // underlying balancer.
+// 更新子链接状态
 func (ccb *ccBalancerWrapper) updateSubConnState(sc balancer.SubConn, s connectivity.State, err error) {
 	// When updating addresses for a SubConn, if the address in use is not in
 	// the new addresses, the old ac will be tearDown() and a new ac will be

@@ -68,8 +68,12 @@ func (b *pickfirstBalancer) ResolverError(err error) {
 	})
 }
 
+// 更新cs状态
+// 服务发现更新后端地址列表
 func (b *pickfirstBalancer) UpdateClientConnState(state balancer.ClientConnState) error {
+
 	if len(state.ResolverState.Addresses) == 0 {
+		// 地址列表为空则当做解析失败
 		// The resolver reported an empty address list. Treat it like an error by
 		// calling b.ResolverError.
 		if b.subConn != nil {
@@ -82,11 +86,14 @@ func (b *pickfirstBalancer) UpdateClientConnState(state balancer.ClientConnState
 		return balancer.ErrBadResolverState
 	}
 
+	// 已经创建过链接则更新
 	if b.subConn != nil {
 		b.cc.UpdateAddresses(b.subConn, state.ResolverState.Addresses)
 		return nil
 	}
+	// 为创建链接则新建链接
 
+	// 这一步有创建底层链接吗？貌似没有，下面更新状态为idle，这一段难道仅仅是创建结构体
 	subConn, err := b.cc.NewSubConn(state.ResolverState.Addresses, balancer.NewSubConnOptions{})
 	if err != nil {
 		if logger.V(2) {
@@ -105,10 +112,12 @@ func (b *pickfirstBalancer) UpdateClientConnState(state balancer.ClientConnState
 		ConnectivityState: connectivity.Connecting,
 		Picker:            &picker{err: balancer.ErrNoSubConnAvailable},
 	})
+	// 这里才是真正创建连接吧？
 	b.subConn.Connect()
 	return nil
 }
 
+// 更新子链接状态 如idle、连接中、ready等等
 func (b *pickfirstBalancer) UpdateSubConnState(subConn balancer.SubConn, state balancer.SubConnState) {
 	if logger.V(2) {
 		logger.Infof("pickfirstBalancer: UpdateSubConnState: %p, %v", subConn, state)
@@ -126,21 +135,25 @@ func (b *pickfirstBalancer) UpdateSubConnState(subConn balancer.SubConn, state b
 	}
 
 	switch state.ConnectivityState {
+	// 链接OK，可以pick返回
 	case connectivity.Ready:
 		b.cc.UpdateState(balancer.State{
 			ConnectivityState: state.ConnectivityState,
 			Picker:            &picker{result: balancer.PickResult{SubConn: subConn}},
 		})
+	// 正在连接，pick不可用
 	case connectivity.Connecting:
 		b.cc.UpdateState(balancer.State{
 			ConnectivityState: state.ConnectivityState,
 			Picker:            &picker{err: balancer.ErrNoSubConnAvailable},
 		})
+	// 链接闲置状态，pick时再创建链接，返回不可用
 	case connectivity.Idle:
 		b.cc.UpdateState(balancer.State{
 			ConnectivityState: state.ConnectivityState,
 			Picker:            &idlePicker{subConn: subConn},
 		})
+	// 失败中，返回链接异常
 	case connectivity.TransientFailure:
 		b.cc.UpdateState(balancer.State{
 			ConnectivityState: state.ConnectivityState,
