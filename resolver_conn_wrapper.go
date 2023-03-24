@@ -96,7 +96,7 @@ func (ccr *ccResolverWrapper) UpdateState(s resolver.State) error {
 	ccr.incomingMu.Lock()
 	defer ccr.incomingMu.Unlock()
 
-	// 是否处理过
+	// 链接是否关闭
 	if ccr.done.HasFired() {
 		return nil
 	}

@@ -383,6 +383,7 @@ func newHTTP2Client(connectCtx, ctx context.Context, addr resolver.Address, opts
 	}
 	if t.keepaliveEnabled {
 		t.kpDormancyCond = sync.NewCond(&t.mu)
+		// 链接保活，实际上是发送httP2 ping报文
 		go t.keepalive()
 	}
 
@@ -393,6 +394,8 @@ func newHTTP2Client(connectCtx, ctx context.Context, addr resolver.Address, opts
 	// first, an error is pushed to the channel.  This must be checked before
 	// returning from this function.
 	readerErrCh := make(chan error, 1)
+
+	// 异步数据接收，客户端数据会放到一个队列里
 	go t.reader(readerErrCh)
 	defer func() {
 		if err == nil {
@@ -404,7 +407,7 @@ func newHTTP2Client(connectCtx, ctx context.Context, addr resolver.Address, opts
 	}()
 
 	// Send connection preface to server.
-	// 发送 connection preface
+	// 发送 http/2链接序言
 	n, err := t.conn.Write(clientPreface)
 	if err != nil {
 		err = connectionErrorf(true, err, "transport: failed to write client preface: %v", err)
@@ -428,6 +431,7 @@ func newHTTP2Client(connectCtx, ctx context.Context, addr resolver.Address, opts
 			Val: *opts.MaxHeaderListSize,
 		})
 	}
+	// 继续发送connection preface
 	err = t.framer.fr.WriteSettings(ss...)
 	if err != nil {
 		err = connectionErrorf(true, err, "transport: failed to write initial settings frame: %v", err)
@@ -446,6 +450,8 @@ func newHTTP2Client(connectCtx, ctx context.Context, addr resolver.Address, opts
 	if err := t.framer.writer.Flush(); err != nil {
 		return nil, err
 	}
+
+	// 循环处理写事件，如心跳、控制消息、业务数据等
 	go func() {
 		t.loopy = newLoopyWriter(clientSide, t.framer, t.controlBuf, t.bdpEst)
 		err := t.loopy.run()

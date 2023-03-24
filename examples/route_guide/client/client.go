@@ -57,10 +57,12 @@ func printFeature(client pb.RouteGuideClient, point *pb.Point) {
 }
 
 // printFeatures lists all the features within the given bounding Rectangle.
+// 服务器流响应
 func printFeatures(client pb.RouteGuideClient, rect *pb.Rectangle) {
 	log.Printf("Looking for features within %v", rect)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	// 生成一个流用来循环读取响应
 	stream, err := client.ListFeatures(ctx, rect)
 	if err != nil {
 		log.Fatalf("client.ListFeatures failed: %v", err)
@@ -182,14 +184,17 @@ func main() {
 	printFeature(client, &pb.Point{Latitude: 0, Longitude: 0})
 
 	// Looking for features between 40, -75 and 42, -73.
-	printFeatures(client, &pb.Rectangle{
-		Lo: &pb.Point{Latitude: 400000000, Longitude: -750000000},
-		Hi: &pb.Point{Latitude: 420000000, Longitude: -730000000},
-	})
+	/*
+		printFeatures(client, &pb.Rectangle{
+			Lo: &pb.Point{Latitude: 400000000, Longitude: -750000000},
+			Hi: &pb.Point{Latitude: 420000000, Longitude: -730000000},
+		})
+	*/
 
 	// RecordRoute
-	runRecordRoute(client)
+	//runRecordRoute(client)
 
 	// RouteChat
-	runRouteChat(client)
+	//runRouteChat(client)
+
 }

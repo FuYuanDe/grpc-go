@@ -47,12 +47,14 @@ func newPickerWrapper() *pickerWrapper {
 // updatePicker is called by UpdateBalancerState. It unblocks all blocked pick.
 func (pw *pickerWrapper) updatePicker(p balancer.Picker) {
 	pw.mu.Lock()
+	// 链接关闭的时候？？？
 	if pw.done {
 		pw.mu.Unlock()
 		return
 	}
 	pw.picker = p
 	// pw.blockingCh should never be nil.
+	// 更新旧的chn，换成新的，为啥
 	close(pw.blockingCh)
 	pw.blockingCh = make(chan struct{})
 	pw.mu.Unlock()
@@ -93,6 +95,7 @@ func (pw *pickerWrapper) pick(ctx context.Context, failfast bool, info balancer.
 
 	var lastPickErr error
 	for {
+		// 检查整个链接是否还在
 		pw.mu.Lock()
 		if pw.done {
 			pw.mu.Unlock()
@@ -116,11 +119,14 @@ func (pw *pickerWrapper) pick(ctx context.Context, failfast bool, info balancer.
 					errStr = ctx.Err().Error()
 				}
 				switch ctx.Err() {
+				// 等待超时
 				case context.DeadlineExceeded:
 					return nil, balancer.PickResult{}, status.Error(codes.DeadlineExceeded, errStr)
+				// 被取消了
 				case context.Canceled:
 					return nil, balancer.PickResult{}, status.Error(codes.Canceled, errStr)
 				}
+			// 有人更新 了picker
 			case <-ch:
 			}
 			continue
@@ -132,9 +138,11 @@ func (pw *pickerWrapper) pick(ctx context.Context, failfast bool, info balancer.
 
 		pickResult, err := p.Pick(info)
 		if err != nil {
+			// 链接未准备好，继续等待，会不会出现死循环？？？
 			if err == balancer.ErrNoSubConnAvailable {
 				continue
 			}
+			// 本项目内定义的异常则返回错误
 			if st, ok := status.FromError(err); ok {
 				// Status error: end the RPC unconditionally with this status.
 				// First restrict the code to the list allowed by gRFC A54.
@@ -152,6 +160,7 @@ func (pw *pickerWrapper) pick(ctx context.Context, failfast bool, info balancer.
 			return nil, balancer.PickResult{}, status.Error(codes.Unavailable, err.Error())
 		}
 
+		// 返回一个wrapper
 		acw, ok := pickResult.SubConn.(*acBalancerWrapper)
 		if !ok {
 			logger.Errorf("subconn returned from pick is type %T, not *acBalancerWrapper", pickResult.SubConn)
@@ -162,8 +171,11 @@ func (pw *pickerWrapper) pick(ctx context.Context, failfast bool, info balancer.
 				doneChannelzWrapper(acw, &pickResult)
 				return t, pickResult, nil
 			}
+			// 获取成功
 			return t, pickResult, nil
 		}
+
+		// 获取失败，下面的处理是啥
 		if pickResult.Done != nil {
 			// Calling done with nil error, no bytes sent and no bytes received.
 			// DoneInfo with default value works.

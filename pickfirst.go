@@ -73,7 +73,7 @@ func (b *pickfirstBalancer) ResolverError(err error) {
 func (b *pickfirstBalancer) UpdateClientConnState(state balancer.ClientConnState) error {
 
 	if len(state.ResolverState.Addresses) == 0 {
-		// 地址列表为空则当做解析失败
+		// 地址列表为空则当做解析失败,同时清空旧的链接
 		// The resolver reported an empty address list. Treat it like an error by
 		// calling b.ResolverError.
 		if b.subConn != nil {
@@ -122,6 +122,7 @@ func (b *pickfirstBalancer) UpdateSubConnState(subConn balancer.SubConn, state b
 	if logger.V(2) {
 		logger.Infof("pickfirstBalancer: UpdateSubConnState: %p, %v", subConn, state)
 	}
+	// pickerBalancer的subconn 应该一致。如果subconn挂掉了，在哪里更新它
 	if b.subConn != subConn {
 		if logger.V(2) {
 			logger.Infof("pickfirstBalancer: ignored state change because subConn is not recognized")
@@ -130,6 +131,8 @@ func (b *pickfirstBalancer) UpdateSubConnState(subConn balancer.SubConn, state b
 	}
 	b.state = state.ConnectivityState
 	if state.ConnectivityState == connectivity.Shutdown {
+		// 链接断开了，啥场景下会出现这种情况？客户端主动断链？服务端主动断链？
+		// 服务发现地址列表为空，此时会释放旧链接
 		b.subConn = nil
 		return
 	}
@@ -137,24 +140,25 @@ func (b *pickfirstBalancer) UpdateSubConnState(subConn balancer.SubConn, state b
 	switch state.ConnectivityState {
 	// 链接OK，可以pick返回
 	case connectivity.Ready:
+		// 链接OK了，将链接塞到picker result里
 		b.cc.UpdateState(balancer.State{
 			ConnectivityState: state.ConnectivityState,
 			Picker:            &picker{result: balancer.PickResult{SubConn: subConn}},
 		})
-	// 正在连接，pick不可用
 	case connectivity.Connecting:
+		// 正在连接，pick不可用，返回not available,正常情况下，需要继续等待
 		b.cc.UpdateState(balancer.State{
 			ConnectivityState: state.ConnectivityState,
 			Picker:            &picker{err: balancer.ErrNoSubConnAvailable},
 		})
-	// 链接闲置状态，pick时再创建链接，返回不可用
 	case connectivity.Idle:
+		// 链接闲置状态，设置idlePicker, 当pick的时候会再去链接
 		b.cc.UpdateState(balancer.State{
 			ConnectivityState: state.ConnectivityState,
 			Picker:            &idlePicker{subConn: subConn},
 		})
-	// 失败中，返回链接异常
 	case connectivity.TransientFailure:
+		// 失败，返回链接异常
 		b.cc.UpdateState(balancer.State{
 			ConnectivityState: state.ConnectivityState,
 			Picker:            &picker{err: state.ConnectionError},

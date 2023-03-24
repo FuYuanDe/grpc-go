@@ -23,6 +23,7 @@ import (
 	"context"
 	"flag"
 	"log"
+	"strconv"
 	"time"
 
 	"google.golang.org/grpc"
@@ -35,7 +36,7 @@ const (
 )
 
 var (
-	addr = flag.String("addr", "localhost:50051", "the address to connect to")
+	addr = flag.String("addr", "my:///localhost:50052,localhost:50051", "the address to connect to")
 	name = flag.String("name", defaultName, "Name to greet")
 )
 
@@ -50,11 +51,14 @@ func main() {
 	c := pb.NewGreeterClient(conn)
 
 	// Contact the server and print out its response.
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
 	defer cancel()
-	r, err := c.SayHello(ctx, &pb.HelloRequest{Name: *name})
-	if err != nil {
-		log.Fatalf("could not greet: %v", err)
+
+	for i := 0; i < 1000; i++ {
+		_, err := c.SayHello(ctx, &pb.HelloRequest{Name: strconv.Itoa(i)})
+		if err != nil {
+			log.Fatalf("could not greet: %v", err)
+		}
+		time.Sleep(time.Second)
 	}
-	log.Printf("Greeting: %s", r.GetMessage())
 }

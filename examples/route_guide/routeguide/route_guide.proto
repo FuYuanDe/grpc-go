@@ -57,8 +57,8 @@ service RouteGuide {
 // Latitudes should be in the range +/- 90 degrees and longitude should be in
 // the range +/- 180 degrees (inclusive).
 message Point {
-  int32 latitude = 1;
-  int32 longitude = 2;
+  int32 latitude = 1; // 纬度
+  int32 longitude = 2; // 经度
 }
 
 // A latitude-longitude rectangle, represented as two diagonally opposite

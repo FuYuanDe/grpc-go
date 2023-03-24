@@ -202,6 +202,8 @@ type State struct {
 // brand new implementation of this interface. For the situations like
 // testing, the new implementation should embed this interface. This allows
 // gRPC to add new methods to this interface.
+//
+// 用于通知client conn状态变更
 type ClientConn interface {
 	// UpdateState updates the state of the ClientConn appropriately.
 	//

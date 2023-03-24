@@ -182,6 +182,8 @@ func clientStreamWithMetadata(c pb.EchoClient, message string) {
 
 	// Send all requests to the server.
 	for i := 0; i < streamingCount; i++ {
+
+		time.Sleep(time.Second)
 		if err := stream.Send(&pb.EchoRequest{Message: message}); err != nil {
 			log.Fatalf("failed to send streaming: %v\n", err)
 		}
@@ -298,11 +300,11 @@ func main() {
 	//unaryCallWithMetadata(c, message)
 	//time.Sleep(1 * time.Second)
 
-	serverStreamingWithMetadata(c, message)
-	time.Sleep(1 * time.Second)
+	//serverStreamingWithMetadata(c, message)
+	//time.Sleep(1 * time.Second)
 
-	//	clientStreamWithMetadata(c, message)
-	//	time.Sleep(1 * time.Second)
+	clientStreamWithMetadata(c, message)
+	time.Sleep(1 * time.Second)
 
 	//	bidirectionalWithMetadata(c, message)
 

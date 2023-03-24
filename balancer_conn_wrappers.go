@@ -242,6 +242,7 @@ func (ccb *ccBalancerWrapper) resolverError(err error) {
 	ccb.updateCh.Put(&resolverErrorUpdate{err: err})
 }
 
+// 通知负载均衡解析失败
 func (ccb *ccBalancerWrapper) handleResolverError(err error) {
 	ccb.balancer.ResolverError(err)
 }
@@ -358,6 +359,7 @@ func (ccb *ccBalancerWrapper) UpdateState(s balancer.State) {
 	// updated later, we could call the "connecting" picker when the state is
 	// updated, and then call the "ready" picker after the picker gets updated.
 	ccb.cc.blockingpicker.updatePicker(s.Picker)
+	// 这里的csmgr做啥用
 	ccb.cc.csMgr.updateState(s.ConnectivityState)
 }
 
