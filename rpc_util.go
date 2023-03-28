@@ -594,11 +594,14 @@ type parser struct {
 // that the underlying io.Reader must not return an incompatible
 // error.
 func (p *parser) recvMsg(maxReceiveMessageSize int) (pf payloadFormat, msg []byte, err error) {
+	// 读取http/2 头, 长度，类型，标志
 	if _, err := p.r.Read(p.header[:]); err != nil {
 		return 0, nil, err
 	}
 
+	// 类型
 	pf = payloadFormat(p.header[0])
+	// 长度
 	length := binary.BigEndian.Uint32(p.header[1:])
 
 	if length == 0 {

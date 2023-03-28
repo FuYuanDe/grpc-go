@@ -123,6 +123,7 @@ type ClientStream interface {
 	// calling RecvMsg on the same stream at the same time, but it is not safe
 	// to call SendMsg on the same stream in different goroutines. It is also
 	// not safe to call CloseSend concurrently with SendMsg.
+	// 并发不安全
 	SendMsg(m interface{}) error
 	// RecvMsg blocks until it receives a message into m or the stream is
 	// done. It returns io.EOF when the stream completes successfully. On
@@ -182,6 +183,7 @@ func newClientStream(ctx context.Context, desc *StreamDesc, cc *ClientConn, meth
 			}
 		}
 	}
+	// debug相关
 	if channelz.IsOn() {
 		cc.incrCallsStarted()
 		defer func() {
@@ -871,9 +873,11 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 			cs.finish(err)
 		}
 	}()
+	// local侧已经关闭了stream，不能再发送，这里应该已经发送了end-stream报文吧？
 	if cs.sentLast {
 		return status.Errorf(codes.Internal, "SendMsg called after CloseSend")
 	}
+	// 非流式请求只能发送一次，因此，直接置标志位即可。
 	if !cs.desc.ClientStreams {
 		cs.sentLast = true
 	}
@@ -1756,6 +1760,7 @@ func prepareMsg(m interface{}, codec baseCodec, cp Compressor, comp encoding.Com
 	}
 	// The input interface is not a prepared msg.
 	// Marshal and Compress the data at this point
+	// 编码
 	data, err = encode(codec, m)
 	if err != nil {
 		return nil, nil, nil, err
@@ -1764,6 +1769,7 @@ func prepareMsg(m interface{}, codec baseCodec, cp Compressor, comp encoding.Com
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	// 这里的hdr有啥用
 	hdr, payload = msgHeader(data, compData)
 	return hdr, payload, data, nil
 }

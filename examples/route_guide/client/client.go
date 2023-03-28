@@ -81,6 +81,7 @@ func printFeatures(client pb.RouteGuideClient, rect *pb.Rectangle) {
 }
 
 // runRecordRoute sends a sequence of points to server and expects to get a RouteSummary from server.
+// 客户端流式rpc
 func runRecordRoute(client pb.RouteGuideClient) {
 	// Create a random number of random points
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
