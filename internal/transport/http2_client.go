@@ -713,6 +713,8 @@ func (e NewStreamError) Error() string {
 
 // NewStream creates a stream and registers it into the transport as "active"
 // streams.  All non-nil errors returned will be *NewStreamError.
+// 新建Stream 并注册到传输层，状态改为活跃
+// 说明同一个传输层支持多个Stream，这里的stream应该实现了http2stream定义
 func (t *http2Client) NewStream(ctx context.Context, callHdr *CallHdr) (*Stream, error) {
 	ctx = peer.NewContext(ctx, t.getPeer())
 
@@ -727,6 +729,7 @@ func (t *http2Client) NewStream(ctx context.Context, callHdr *CallHdr) (*Stream,
 		callHdr = &newCallHdr
 	}
 
+	// 创建http2 header 头域
 	headerFields, err := t.createHeaderFields(ctx, callHdr)
 	if err != nil {
 		return nil, &NewStreamError{Err: err, AllowTransparentRetry: false}
@@ -749,7 +752,7 @@ func (t *http2Client) NewStream(ctx context.Context, callHdr *CallHdr) (*Stream,
 	hdr := &headerFrame{
 		hf:        headerFields,
 		endStream: false,
-		initStream: func(id uint32) error {
+		initStream: func(id uint32) error { // 这里的初始化stream主要一个功能就是唤醒kp 协程
 			t.mu.Lock()
 			// TODO: handle transport closure in loopy instead and remove this
 			// initStream is never called when transport is draining.
@@ -763,13 +766,13 @@ func (t *http2Client) NewStream(ctx context.Context, callHdr *CallHdr) (*Stream,
 				atomic.StoreInt64(&t.czData.lastStreamCreatedTime, time.Now().UnixNano())
 			}
 			// If the keepalive goroutine has gone dormant, wake it up.
-			if t.kpDormant {
+			if t.kpDormant { // 是否休眠
 				t.kpDormancyCond.Signal()
 			}
 			t.mu.Unlock()
 			return nil
 		},
-		onOrphaned: cleanup,
+		onOrphaned: cleanup, // 啥时候用？
 		wq:         s.wq,
 	}
 	firstTry := true
@@ -813,6 +816,7 @@ func (t *http2Client) NewStream(ctx context.Context, callHdr *CallHdr) (*Stream,
 		return true
 	}
 	var hdrListSizeErr error
+	// 检查头域长度
 	checkForHeaderListSize := func(it interface{}) bool {
 		if t.maxSendHeaderListSize == nil {
 			return true
@@ -1044,10 +1048,12 @@ func (t *http2Client) GracefulClose() {
 func (t *http2Client) Write(s *Stream, hdr []byte, data []byte, opts *Options) error {
 	if opts.Last {
 		// If it's the last message, update stream state.
+		// 更新stream状态 非http2 stream状态
 		if !s.compareAndSwapState(streamActive, streamWriteDone) {
 			return errStreamDone
 		}
 	} else if s.getState() != streamActive {
+		// 非活跃的stream不允许写
 		return errStreamDone
 	}
 	df := &dataFrame{
@@ -1056,6 +1062,7 @@ func (t *http2Client) Write(s *Stream, hdr []byte, data []byte, opts *Options) e
 		h:         hdr,
 		d:         data,
 	}
+	// 流控相关
 	if hdr != nil || data != nil { // If it's not an empty data frame, check quota.
 		if err := s.wq.get(int32(len(hdr) + len(data))); err != nil {
 			return err

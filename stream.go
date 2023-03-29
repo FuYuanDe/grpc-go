@@ -54,16 +54,22 @@ import (
 // status package, or be one of the context errors. Otherwise, gRPC will use
 // codes.Unknown as the status code and err.Error() as the status message of the
 // RPC.
+// 定义流式rpc处理函数，由grpc server调用
 type StreamHandler func(srv interface{}, stream ServerStream) error
 
 // StreamDesc represents a streaming RPC service's method specification.  Used
 // on the server when registering services and on the client when initiating
 // new streams.
+// 代表一个流rpc 方法定义
+// 服务端注册服务的时候使用
+// 客户端初始化新的stream的时候使用
 type StreamDesc struct {
 	// StreamName and Handler are only used when registering handlers on a
 	// server.
-	StreamName string        // the name of the method excluding the service
-	Handler    StreamHandler // the handler called for the method
+	// 方法名
+	StreamName string // the name of the method excluding the service
+	// 客户端使用的时候应该不会用到这里
+	Handler StreamHandler // the handler called for the method
 
 	// ServerStreams and ClientStreams are used for registering handlers on a
 	// server as well as defining RPC behavior when passed to NewClientStream
@@ -88,17 +94,21 @@ type Stream interface {
 //
 // All errors returned from ClientStream methods are compatible with the
 // status package.
+// 接口！！！ 核心包括发送和接收消息
 type ClientStream interface {
 	// Header returns the header metadata received from the server if there
 	// is any. It blocks if the metadata is not ready to read.
+	// 返回server返回的header
 	Header() (metadata.MD, error)
 	// Trailer returns the trailer metadata from the server, if there is any.
 	// It must only be called after stream.CloseAndRecv has returned, or
 	// stream.Recv has returned a non-nil error (including io.EOF).
+	//
 	Trailer() metadata.MD
 	// CloseSend closes the send direction of the stream. It closes the stream
 	// when non-nil error is met. It is also not safe to call CloseSend
 	// concurrently with SendMsg.
+	//
 	CloseSend() error
 	// Context returns the context for this stream.
 	//
@@ -152,6 +162,7 @@ type ClientStream interface {
 //
 // If none of the above happen, a goroutine and a context will be leaked, and grpc
 // will not call the optionally-configured stats handler with a stats.End message.
+// 创建用户侧流对象
 func (cc *ClientConn) NewStream(ctx context.Context, desc *StreamDesc, method string, opts ...CallOption) (ClientStream, error) {
 	// allow interceptor to see all applicable call options, which means those
 	// configured as defaults from dial option as well as per-call options
@@ -241,6 +252,7 @@ func newClientStream(ctx context.Context, desc *StreamDesc, cc *ClientConn, meth
 	return newStream(ctx, func() {})
 }
 
+// 当流建立OK后，http2 header报文已经发出
 func newClientStreamWithParams(ctx context.Context, desc *StreamDesc, cc *ClientConn, method string, mc serviceconfig.MethodConfig, onCommit, doneFunc func(), opts ...CallOption) (_ iresolver.ClientStream, err error) {
 	c := defaultCallInfo()
 	if mc.WaitForReady != nil {
@@ -352,6 +364,7 @@ func newClientStreamWithParams(ctx context.Context, desc *StreamDesc, cc *Client
 		cs.attempt = a
 		return nil
 	}
+	// withtry onSuccess
 	if err := cs.withRetry(op, func() { cs.bufferForRetryLocked(0, op) }); err != nil {
 		return nil, err
 	}
@@ -405,6 +418,7 @@ func (cs *clientStream) newAttemptLocked(isTransparent bool) (*csAttempt, error)
 	ctx := newContextWithRPCInfo(cs.ctx, cs.callInfo.failFast, cs.callInfo.codec, cs.cp, cs.comp)
 	method := cs.callHdr.Method
 	var beginTime time.Time
+	// 数据统计相关
 	shs := cs.cc.dopts.copts.StatsHandlers
 	for _, sh := range shs {
 		ctx = sh.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: method, FailFast: cs.callInfo.failFast})
@@ -420,6 +434,7 @@ func (cs *clientStream) newAttemptLocked(isTransparent bool) (*csAttempt, error)
 		sh.HandleRPC(ctx, begin)
 	}
 
+	// 链路跟踪？
 	var trInfo *traceInfo
 	if EnableTracing {
 		trInfo = &traceInfo{
@@ -453,9 +468,11 @@ func (cs *clientStream) newAttemptLocked(isTransparent bool) (*csAttempt, error)
 	}, nil
 }
 
+// 选择传输层
 func (a *csAttempt) getTransport() error {
 	cs := a.cs
 
+	// 调用clientConn获取传输层，传输层会由负载均衡建立OK后通知clientConn
 	var err error
 	a.t, a.pickResult, err = cs.cc.getTransport(a.ctx, cs.callInfo.failFast, cs.callHdr.Method)
 	if err != nil {
@@ -745,7 +762,7 @@ func (cs *clientStream) Context() context.Context {
 func (cs *clientStream) withRetry(op func(a *csAttempt) error, onSuccess func()) error {
 	cs.mu.Lock()
 	for {
-		if cs.committed {
+		if cs.committed { // 啥时候设置这个>管理链接的时候
 			cs.mu.Unlock()
 			// toRPCErr is used in case the error from the attempt comes from
 			// NewClientStream, which intentionally doesn't return a status
@@ -753,12 +770,15 @@ func (cs *clientStream) withRetry(op func(a *csAttempt) error, onSuccess func())
 			// already be status errors.
 			return toRPCErr(op(cs.attempt))
 		}
+		// buffer哪里用到
+		// buffer存放了待重试的操作列表
 		if len(cs.buffer) == 0 {
 			// For the first op, which controls creation of the stream and
 			// assigns cs.attempt, we need to create a new attempt inline
 			// before executing the first op.  On subsequent ops, the attempt
 			// is created immediately before replaying the ops.
 			var err error
+			// 创建attempt
 			if cs.attempt, err = cs.newAttemptLocked(false /* isTransparent */); err != nil {
 				cs.mu.Unlock()
 				cs.finish(err)
@@ -769,10 +789,12 @@ func (cs *clientStream) withRetry(op func(a *csAttempt) error, onSuccess func())
 		cs.mu.Unlock()
 		err := op(a)
 		cs.mu.Lock()
+		// ???
 		if a != cs.attempt {
 			// We started another attempt already.
 			continue
 		}
+		// 这个啥场景泳道
 		if err == io.EOF {
 			<-a.s.Done()
 		}
@@ -840,6 +862,7 @@ func (cs *clientStream) Trailer() metadata.MD {
 	return cs.attempt.s.Trailer()
 }
 
+// 开始重试
 func (cs *clientStream) replayBufferLocked(attempt *csAttempt) error {
 	for _, f := range cs.buffer {
 		if err := f(attempt); err != nil {
@@ -849,6 +872,7 @@ func (cs *clientStream) replayBufferLocked(attempt *csAttempt) error {
 	return nil
 }
 
+// 缓存起来等待重试，locked说明已经加锁保护了
 func (cs *clientStream) bufferForRetryLocked(sz int, op func(a *csAttempt) error) {
 	// Note: we still will buffer if retry is disabled (for transparent retries).
 	if cs.committed {
@@ -863,6 +887,7 @@ func (cs *clientStream) bufferForRetryLocked(sz int, op func(a *csAttempt) error
 }
 
 func (cs *clientStream) SendMsg(m interface{}) (err error) {
+	// 有异常则关闭链接、释放资源。如果是网络问题则无需处理，等到RecvMsg的时候再处理
 	defer func() {
 		if err != nil && err != io.EOF {
 			// Call finish on the client stream for errors generated by this SendMsg
@@ -883,18 +908,26 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 	}
 
 	// load hdr, payload, data
+	// 准备消息 包括编码、压缩、Length-Prefixed-Message
+	// data为原始编码后的数据，若无压缩，则payload和data一样，反之则为压缩数据
 	hdr, payload, data, err := prepareMsg(m, cs.codec, cs.cp, cs.comp)
 	if err != nil {
 		return err
 	}
 
 	// TODO(dfawley): should we be checking len(data) instead?
+	// 大小检查 大小是在哪里配置的？？
 	if len(payload) > *cs.callInfo.maxSendMessageSize {
 		return status.Errorf(codes.ResourceExhausted, "trying to send message larger than max (%d vs. %d)", len(payload), *cs.callInfo.maxSendMessageSize)
 	}
+	// 封装一个函数 发送消息
 	op := func(a *csAttempt) error {
 		return a.sendMsg(m, hdr, payload, data)
 	}
+
+	// withRetry 带重试功能？
+	// 第一个入参是操作
+	// 第二个入参是onSuccess 奇怪的是既然已经success为啥还要缓存，难道success的时候设置commit标志位？
 	err = cs.withRetry(op, func() { cs.bufferForRetryLocked(len(hdr)+len(payload), op) })
 	if len(cs.binlogs) != 0 && err == nil {
 		cm := &binarylog.ClientMessage{
@@ -954,6 +987,7 @@ func (cs *clientStream) RecvMsg(m interface{}) error {
 	return err
 }
 
+// 发送http2 data报文, end-stream 标志位true
 func (cs *clientStream) CloseSend() error {
 	if cs.sentLast {
 		// TODO: return an error and finish the stream instead, due to API misuse?
@@ -969,6 +1003,8 @@ func (cs *clientStream) CloseSend() error {
 		return nil
 	}
 	cs.withRetry(op, func() { cs.bufferForRetryLocked(0, op) })
+
+	// 日志相关
 	if len(cs.binlogs) != 0 {
 		chc := &binarylog.ClientHalfClose{
 			OnClientSide: true,
@@ -981,21 +1017,29 @@ func (cs *clientStream) CloseSend() error {
 	return nil
 }
 
+// 这个函数相当于关闭链接，清理资源
 func (cs *clientStream) finish(err error) {
+	// 如果是EOF 当做成功
 	if err == io.EOF {
 		// Ending a stream with EOF indicates a success.
 		err = nil
 	}
 	cs.mu.Lock()
+	// 已经finish就无需重复操作
 	if cs.finished {
 		cs.mu.Unlock()
 		return
 	}
+	// 设置finish标志
 	cs.finished = true
+	// 看看有没有啥回调函数 有的话在这里执行下
 	for _, onFinish := range cs.callInfo.onFinish {
 		onFinish(err)
 	}
+
+	// 已经结束了，这里设置下commited标志位并清空缓存列表
 	cs.commitAttemptLocked()
+	// 如果存在底层链接，则需要关闭
 	if cs.attempt != nil {
 		cs.attempt.finish(err)
 		// after functions all rely upon having a stream.
@@ -1006,6 +1050,8 @@ func (cs *clientStream) finish(err error) {
 		}
 	}
 	cs.mu.Unlock()
+
+	// 下面这段日志相关
 	// For binary logging. only log cancel in finish (could be caused by RPC ctx
 	// canceled or ClientConn closed). Trailer will be logged in RecvMsg.
 	//
@@ -1022,6 +1068,7 @@ func (cs *clientStream) finish(err error) {
 	if err == nil {
 		cs.retryThrottler.successfulRPC()
 	}
+	// debug
 	if channelz.IsOn() {
 		if err != nil {
 			cs.cc.incrCallsFailed()
@@ -1032,8 +1079,11 @@ func (cs *clientStream) finish(err error) {
 	cs.cancel()
 }
 
+// 这里入参m表示message，主要用于数据统计
+// 发送消息
 func (a *csAttempt) sendMsg(m interface{}, hdr, payld, data []byte) error {
 	cs := a.cs
+	// 跟踪相关
 	if a.trInfo != nil {
 		a.mu.Lock()
 		if a.trInfo.tr != nil {
@@ -1041,7 +1091,11 @@ func (a *csAttempt) sendMsg(m interface{}, hdr, payld, data []byte) error {
 		}
 		a.mu.Unlock()
 	}
+	// 非流式rpc发送报文会带上end-stream 标志
 	if err := a.t.Write(a.s, hdr, payld, &transport.Options{Last: !cs.desc.ClientStreams}); err != nil {
+		// 为啥返回io.EOF?
+		// 如果是clientStream则返回io.EOF,
+		// 非clientStream则返回nil, 为啥这么处理
 		if !cs.desc.ClientStreams {
 			// For non-client-streaming RPCs, we return nil instead of EOF on error
 			// because the generated code requires it.  finish is not called; RecvMsg()
@@ -1050,6 +1104,7 @@ func (a *csAttempt) sendMsg(m interface{}, hdr, payld, data []byte) error {
 		}
 		return io.EOF
 	}
+
 	for _, sh := range a.statsHandlers {
 		sh.HandleRPC(a.ctx, outPayload(true, m, data, payld, time.Now()))
 	}
@@ -1159,6 +1214,7 @@ func (a *csAttempt) finish(err error) {
 			ServerLoad:    balancerload.Parse(tr),
 		})
 	}
+	// 数据统计
 	for _, sh := range a.statsHandlers {
 		end := &stats.End{
 			Client:    true,
@@ -1169,6 +1225,8 @@ func (a *csAttempt) finish(err error) {
 		}
 		sh.HandleRPC(a.ctx, end)
 	}
+
+	// trace 信息
 	if a.trInfo != nil && a.trInfo.tr != nil {
 		if err == nil {
 			a.trInfo.tr.LazyPrintf("RPC: [OK]")
@@ -1755,6 +1813,7 @@ func MethodFromServerStream(stream ServerStream) (string, bool) {
 // using the compressors passed or using the
 // passed preparedmsg
 func prepareMsg(m interface{}, codec baseCodec, cp Compressor, comp encoding.Compressor) (hdr, payload, data []byte, err error) {
+	// 已经构造过直接返回即可
 	if preparedMsg, ok := m.(*PreparedMsg); ok {
 		return preparedMsg.hdr, preparedMsg.payload, preparedMsg.encodedData, nil
 	}
@@ -1765,11 +1824,16 @@ func prepareMsg(m interface{}, codec baseCodec, cp Compressor, comp encoding.Com
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	// 压缩
 	compData, err := compress(data, cp, comp)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	// 这里的hdr有啥用
+	// 这里的hdr有啥用 :hdr长度为5个字节，第一个字节包含了是否压缩标志位，后面4个长度包含数据长度
+	// 这里的hdr是grpc自己的header吧，包含了一个标志位以及data长度
+	// Length-Prefixed-Message https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md
 	hdr, payload = msgHeader(data, compData)
+	// data为原始编码后的数据 payload为压缩后的数据，如果没有压缩，则与data一样
+	//fmt.Printf("hdr:%v,hdrS:%s, size:%d, data:%d\n", hdr, fmt.Sprintf("%x", hdr), len(hdr), len(data))
 	return hdr, payload, data, nil
 }

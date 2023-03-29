@@ -622,7 +622,7 @@ func (l *loopyWriter) registerStreamHandler(h *registerStream) error {
 }
 
 func (l *loopyWriter) headerHandler(h *headerFrame) error {
-	if l.side == serverSide {
+	if l.side == serverSide { // 服务侧
 		str, ok := l.estdStreams[h.streamID]
 		if !ok {
 			if logger.V(logLevel) {
@@ -646,7 +646,7 @@ func (l *loopyWriter) headerHandler(h *headerFrame) error {
 		}
 		return l.cleanupStreamHandler(h.cleanup)
 	}
-	// Case 2: Client wants to originate stream.
+	// Case 2: Client wants to originate stream. 发起
 	str := &outStream{
 		id:    h.streamID,
 		state: empty,
@@ -659,11 +659,12 @@ func (l *loopyWriter) headerHandler(h *headerFrame) error {
 func (l *loopyWriter) originateStream(str *outStream, hdr *headerFrame) error {
 	// l.draining is set when handling GoAway. In which case, we want to avoid
 	// creating new streams.
-	if l.draining {
+	if l.draining { // 链接断开
 		// TODO: provide a better error with the reason we are in draining.
 		hdr.onOrphaned(errStreamDrain)
 		return nil
 	}
+	// 初始化主要是通知保活线程
 	if err := hdr.initStream(str.id); err != nil {
 		return err
 	}
@@ -825,32 +826,46 @@ func (l *loopyWriter) closeConnectionHandler() error {
 
 func (l *loopyWriter) handle(i interface{}) error {
 	switch i := i.(type) {
+	// 流控 收到窗口变更
 	case *incomingWindowUpdate:
 		return l.incomingWindowUpdateHandler(i)
+		// 流控 发送窗口变更
 	case *outgoingWindowUpdate:
 		return l.outgoingWindowUpdateHandler(i)
+		// 设置 收到设置变更
 	case *incomingSettings:
 		return l.incomingSettingsHandler(i)
+		// 设置 发送设置变更
 	case *outgoingSettings:
 		return l.outgoingSettingsHandler(i)
+		// 头域报文
 	case *headerFrame:
 		return l.headerHandler(i)
+		// ？有啥用
 	case *registerStream:
 		return l.registerStreamHandler(i)
+		// ？有啥用
 	case *cleanupStream:
 		return l.cleanupStreamHandler(i)
+		// ？啥场景下用这个
 	case *earlyAbortStream:
 		return l.earlyAbortStreamHandler(i)
+		// 收到断链
 	case *incomingGoAway:
 		return l.incomingGoAwayHandler(i)
+		// 数据报文
 	case *dataFrame:
-		return l.preprocessData(i)
+		return l.preprocessData(i) // 将数据塞入对应stream列表
+		// 连通性ping报文
 	case *ping:
 		return l.pingHandler(i)
+		// 发送断链报文
 	case *goAway:
 		return l.goAwayHandler(i)
+		// 流控 发送流控
 	case *outFlowControlSizeRequest:
 		return l.outFlowControlSizeRequestHandler(i)
+		// 关闭链接 和上方的goaway有何区别
 	case closeConnection:
 		return l.closeConnectionHandler()
 	default:

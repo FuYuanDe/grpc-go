@@ -20,6 +20,8 @@ package grpc
 
 import (
 	"context"
+	"fmt"
+	"time"
 )
 
 // Invoke sends the RPC request on the wire and returns after response is
@@ -63,10 +65,16 @@ func Invoke(ctx context.Context, method string, args, reply interface{}, cc *Cli
 var unaryStreamDesc = &StreamDesc{ServerStreams: false, ClientStreams: false}
 
 func invoke(ctx context.Context, method string, req, reply interface{}, cc *ClientConn, opts ...CallOption) error {
+
+	// 创建一个clientStream，创建完成后已经发出了http2 header报文，接下来就是发送data报文
+	// clientStream 和 http2 stream是不同的概念
 	cs, err := newClientStream(ctx, unaryStreamDesc, cc, method, opts...)
 	if err != nil {
 		return err
 	}
+
+	fmt.Printf("sleep before send req\n")
+	time.Sleep(time.Second * time.Duration(5))
 	if err := cs.SendMsg(req); err != nil {
 		return err
 	}

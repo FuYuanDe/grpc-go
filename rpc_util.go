@@ -683,6 +683,7 @@ const (
 // payload, which is compData if non-nil or data otherwise.
 func msgHeader(data, compData []byte) (hdr []byte, payload []byte) {
 	hdr = make([]byte, headerLen)
+	// 设置是否压缩标志位,如果开启压缩,则更新data域为压缩数据
 	if compData != nil {
 		hdr[0] = byte(compressionMade)
 		data = compData

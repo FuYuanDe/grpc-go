@@ -45,6 +45,7 @@ var (
 )
 
 // printFeature gets the feature for the given point.
+// unary rpc
 func printFeature(client pb.RouteGuideClient, point *pb.Point) {
 	log.Printf("Getting feature for point (%d, %d)", point.Latitude, point.Longitude)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -110,6 +111,7 @@ func runRecordRoute(client pb.RouteGuideClient) {
 }
 
 // runRouteChat receives a sequence of route notes, while sending notes for various locations.
+// 双向流式rpc
 func runRouteChat(client pb.RouteGuideClient) {
 	notes := []*pb.RouteNote{
 		{Location: &pb.Point{Latitude: 0, Longitude: 1}, Message: "First message"},
@@ -128,6 +130,8 @@ func runRouteChat(client pb.RouteGuideClient) {
 	waitc := make(chan struct{})
 	go func() {
 		for {
+			// 接受线程一直处理，直到对端关闭or还是读到没有数据了 都有可能
+			// io.EOF啥情况下才返回
 			in, err := stream.Recv()
 			if err == io.EOF {
 				// read done.
@@ -145,7 +149,9 @@ func runRouteChat(client pb.RouteGuideClient) {
 			log.Fatalf("client.RouteChat: stream.Send(%v) failed: %v", note, err)
 		}
 	}
+	// 发送完成，关闭输入端
 	stream.CloseSend()
+	// 等待接收端处理完成
 	<-waitc
 }
 

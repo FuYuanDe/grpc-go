@@ -241,21 +241,25 @@ const (
 
 // Stream represents an RPC in the transport layer.
 type Stream struct {
-	id           uint32
-	st           ServerTransport    // nil for client side Stream
-	ct           *http2Client       // nil for server side Stream
-	ctx          context.Context    // the associated context of the stream
-	cancel       context.CancelFunc // always nil for client side Stream
-	done         chan struct{}      // closed at the end of stream to unblock writers. On the client side.
-	doneFunc     func()             // invoked at the end of stream on client side.
-	ctxDone      <-chan struct{}    // same as done chan but for server side. Cache of ctx.Done() (for performance)
-	method       string             // the associated RPC method of the stream
+	id     uint32             //流ID
+	st     ServerTransport    // nil for client side Stream
+	ct     *http2Client       // nil for server side Stream
+	ctx    context.Context    // the associated context of the stream
+	cancel context.CancelFunc // always nil for client side Stream
+	// 通知
+	done     chan struct{}   // closed at the end of stream to unblock writers. On the client side.
+	doneFunc func()          // invoked at the end of stream on client side.
+	ctxDone  <-chan struct{} // same as done chan but for server side. Cache of ctx.Done() (for performance)
+	method   string          // the associated RPC method of the stream
+	// 接收压缩
 	recvCompress string
+	// 发送压缩 啥情况用以及咋用
 	sendCompress string
-	buf          *recvBuffer
-	trReader     io.Reader
-	fc           *inFlow
-	wq           *writeQuota
+	// 接收缓存
+	buf      *recvBuffer
+	trReader io.Reader
+	fc       *inFlow
+	wq       *writeQuota
 
 	// Holds compressor names passed in grpc-accept-encoding metadata from the
 	// client. This is empty for the client side stream.
