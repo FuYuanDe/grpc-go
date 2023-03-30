@@ -1037,6 +1037,7 @@ func (t *http2Server) WriteStatus(s *Stream, st *status.Status) error {
 	s.hdrMu.Lock()
 	defer s.hdrMu.Unlock()
 
+	// 已经finish
 	if s.getState() == streamDone {
 		return nil
 	}

@@ -307,8 +307,10 @@ func newClientStreamWithParams(ctx context.Context, desc *StreamDesc, cc *Client
 	var cp Compressor
 	var comp encoding.Compressor
 	if ct := c.compressorType; ct != "" {
+		// 设置压缩类型
 		callHdr.SendCompress = ct
 		if ct != encoding.Identity {
+			// 获取压缩器
 			comp = encoding.GetCompressor(ct)
 			if comp == nil {
 				return nil, status.Errorf(codes.Internal, "grpc: Compressor is not installed for requested grpc-encoding %q", ct)

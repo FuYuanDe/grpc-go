@@ -719,6 +719,7 @@ type ServerTransport interface {
 
 	// WriteStatus sends the status of a stream to the client.  WriteStatus is
 	// the final call made on a stream and always occurs.
+	// 最后调用
 	WriteStatus(s *Stream, st *status.Status) error
 
 	// Close tears down the transport. Once it is called, the transport

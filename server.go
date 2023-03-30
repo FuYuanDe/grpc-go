@@ -669,10 +669,12 @@ func (s *Server) RegisterService(sd *ServiceDesc, ss interface{}) {
 	if ss != nil {
 		ht := reflect.TypeOf(sd.HandlerType).Elem()
 		st := reflect.TypeOf(ss)
+		// 检查ss是否实现了sd
 		if !st.Implements(ht) {
 			logger.Fatalf("grpc: Server.RegisterService found the handler of type %v that does not satisfy %v", st, ht)
 		}
 	}
+	// 注册ss
 	s.register(sd, ss)
 }
 
@@ -680,19 +682,25 @@ func (s *Server) register(sd *ServiceDesc, ss interface{}) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.printf("RegisterService(%q)", sd.ServiceName)
+	// 服务已经启动了 这时候不应该再注册
 	if s.serve {
 		logger.Fatalf("grpc: Server.RegisterService after Server.Serve for %q", sd.ServiceName)
 	}
+	// 重复注册
 	if _, ok := s.services[sd.ServiceName]; ok {
 		logger.Fatalf("grpc: Server.RegisterService found duplicate service registration for %q", sd.ServiceName)
 	}
+
+	// 内部生成一个serviceInfo
 	info := &serviceInfo{
+		// 绑定业务实现
 		serviceImpl: ss,
 		methods:     make(map[string]*MethodDesc),
 		streams:     make(map[string]*StreamDesc),
 		mdata:       sd.Metadata,
 	}
-	// ???
+
+	// 绑定method描述
 	for i := range sd.Methods {
 		d := &sd.Methods[i]
 		info.methods[d.MethodName] = d
@@ -701,6 +709,7 @@ func (s *Server) register(sd *ServiceDesc, ss interface{}) {
 		d := &sd.Streams[i]
 		info.streams[d.StreamName] = d
 	}
+	// 注册服务
 	s.services[sd.ServiceName] = info
 }
 
@@ -782,7 +791,9 @@ func (l *listenSocket) Close() error {
 func (s *Server) Serve(lis net.Listener) error {
 	s.mu.Lock()
 	s.printf("serving")
+	// 设置服务标志位
 	s.serve = true
+	// 如果监听套接字为空 则退出
 	if s.lis == nil {
 		// Serve called after Stop or GracefulStop.
 		s.mu.Unlock()
@@ -804,6 +815,7 @@ func (s *Server) Serve(lis net.Listener) error {
 
 	defer func() {
 		s.mu.Lock()
+		// 清理函数 关闭链接 释放资源
 		if s.lis != nil && s.lis[ls] {
 			ls.Close()
 			delete(s.lis, ls)
@@ -811,6 +823,7 @@ func (s *Server) Serve(lis net.Listener) error {
 		s.mu.Unlock()
 	}()
 
+	// debug相关
 	var err error
 	ls.channelzID, err = channelz.RegisterListenSocket(ls, s.channelzID, lis.Addr().String())
 	if err != nil {
@@ -822,16 +835,18 @@ func (s *Server) Serve(lis net.Listener) error {
 
 	var tempDelay time.Duration // how long to sleep on accept failure
 	for {
+		// 接收客户端连接
 		rawConn, err := lis.Accept()
 		if err != nil {
 			if ne, ok := err.(interface {
 				Temporary() bool
 			}); ok && ne.Temporary() {
 				if tempDelay == 0 {
-					tempDelay = 5 * time.Millisecond
+					tempDelay = 5 * time.Millisecond // 初始化5毫秒
 				} else {
-					tempDelay *= 2
+					tempDelay *= 2 // 扩大一倍
 				}
+				// 大于一秒则更新为一秒
 				if max := 1 * time.Second; tempDelay > max {
 					tempDelay = max
 				}
@@ -840,28 +855,34 @@ func (s *Server) Serve(lis net.Listener) error {
 				s.mu.Unlock()
 				timer := time.NewTimer(tempDelay)
 				select {
+				// 等待定时器
 				case <-timer.C:
+					// 服务退出了？
 				case <-s.quit.Done():
 					timer.Stop()
 					return nil
 				}
+				// 重试
 				continue
 			}
 			s.mu.Lock()
 			s.printf("done serving; Accept = %v", err)
 			s.mu.Unlock()
 
+			// 检查服务是否关闭
 			if s.quit.HasFired() {
 				return nil
 			}
 			return err
 		}
+		// 重置计数器
 		tempDelay = 0
 		// Start a new goroutine to deal with rawConn so we don't stall this Accept
 		// loop goroutine.
 		//
 		// Make sure we account for the goroutine so GracefulStop doesn't nil out
 		// s.conns before this conn can be added.
+		// 启动子协程处理客户端请求
 		s.serveWG.Add(1)
 		go func() {
 			s.handleRawConn(lis.Addr().String(), rawConn)
@@ -873,10 +894,12 @@ func (s *Server) Serve(lis net.Listener) error {
 // handleRawConn forks a goroutine to handle a just-accepted connection that
 // has not had any I/O performed on it yet.
 func (s *Server) handleRawConn(lisAddr string, rawConn net.Conn) {
+	// 检查程序是否退出
 	if s.quit.HasFired() {
 		rawConn.Close()
 		return
 	}
+
 	// 设置超时
 	rawConn.SetDeadline(time.Now().Add(s.opts.connectionTimeout))
 
@@ -891,8 +914,10 @@ func (s *Server) handleRawConn(lisAddr string, rawConn net.Conn) {
 	if !s.addConn(lisAddr, st) {
 		return
 	}
+	// 启动子协程处理 为啥要继续创建子协程而不是在当前协程里处理呢
 	go func() {
 		s.serveStreams(st)
+		// 资源释放
 		s.removeConn(lisAddr, st)
 	}()
 }
@@ -1069,6 +1094,7 @@ func (s *Server) addConn(addr string, st transport.ServerTransport) bool {
 	return true
 }
 
+// 释放连接占用的资源
 func (s *Server) removeConn(addr string, st transport.ServerTransport) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1170,6 +1196,8 @@ func getChainUnaryHandler(interceptors []UnaryServerInterceptor, curr int, info 
 }
 
 func (s *Server) processUnaryRPC(t transport.ServerTransport, stream *transport.Stream, info *serviceInfo, md *MethodDesc, trInfo *traceInfo) (err error) {
+
+	// 这一大段代码是关于数据统计、链路跟踪、debug相关
 	shs := s.opts.statsHandlers
 	if len(shs) != 0 || trInfo != nil || channelz.IsOn() {
 		if channelz.IsOn() {
@@ -1261,6 +1289,7 @@ func (s *Server) processUnaryRPC(t transport.ServerTransport, stream *transport.
 		}
 	}
 
+	// 下面这段代码才是真正业务处理相关
 	// comp and cp are used for compression.  decomp and dc are used for
 	// decompression.  If comp and decomp are both set, they are the same;
 	// however they are kept separate to ensure that at most one of the
@@ -1345,6 +1374,7 @@ func (s *Server) processUnaryRPC(t transport.ServerTransport, stream *transport.
 		return nil
 	}
 	ctx := NewContextWithServerTransportStream(stream.Context(), stream)
+	// 调用注册的时候绑定的具体实现，返回处理结果
 	reply, appErr := md.Handler(info.serviceImpl, ctx, df, s.opts.unaryInt)
 	if appErr != nil {
 		appStatus, ok := status.FromError(appErr)
@@ -1392,6 +1422,7 @@ func (s *Server) processUnaryRPC(t transport.ServerTransport, stream *transport.
 	if stream.SendCompress() != sendCompressorName {
 		comp = encoding.GetCompressor(stream.SendCompress())
 	}
+	// 发送相应
 	if err := s.sendResponse(t, stream, reply, cp, opts, comp); err != nil {
 		if err == io.EOF {
 			// The entire stream is done (for unary RPC only).
@@ -1694,7 +1725,9 @@ func (s *Server) processStreamingRPC(t transport.ServerTransport, stream *transp
 	return err
 }
 
+// 处理客户端请求
 func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Stream, trInfo *traceInfo) {
+	// 这里的method来自客户端请求？
 	sm := stream.Method()
 	if sm != "" && sm[0] == '/' {
 		sm = sm[1:]
@@ -1718,15 +1751,19 @@ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Str
 		}
 		return
 	}
+	// 提取service和method
 	service := sm[:pos]
 	method := sm[pos+1:]
 
+	// 从server的注册列表中查找对应的服务
 	srv, knownService := s.services[service]
 	if knownService {
+		// 找到了并且是unray rpc
 		if md, ok := srv.methods[method]; ok {
 			s.processUnaryRPC(t, stream, srv, md, trInfo)
 			return
 		}
+		// 找到了并且是stream rpc
 		if sd, ok := srv.streams[method]; ok {
 			s.processStreamingRPC(t, stream, srv, sd, trInfo)
 			return
@@ -1747,6 +1784,7 @@ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Str
 		trInfo.tr.LazyPrintf("%s", errDesc)
 		trInfo.tr.SetError()
 	}
+	// 返回为"实现错误"
 	if err := t.WriteStatus(stream, status.New(codes.Unimplemented, errDesc)); err != nil {
 		if trInfo != nil {
 			trInfo.tr.LazyLog(&fmtStringer{"%v", []interface{}{err}}, true)
