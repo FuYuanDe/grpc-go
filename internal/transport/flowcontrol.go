@@ -142,6 +142,7 @@ func (f *inFlow) newLimit(n uint32) {
 	f.mu.Unlock()
 }
 
+// n 表示client准备读取的字节数
 func (f *inFlow) maybeAdjust(n uint32) uint32 {
 	if n > uint32(math.MaxInt32) {
 		n = uint32(math.MaxInt32)
@@ -150,14 +151,21 @@ func (f *inFlow) maybeAdjust(n uint32) uint32 {
 	defer f.mu.Unlock()
 	// estSenderQuota is the receiver's view of the maximum number of bytes the sender
 	// can send without a window update.
+	// 窗口未更新情况下，发送者最大可发送额度
 	estSenderQuota := int32(f.limit - (f.pendingData + f.pendingUpdate))
+
 	// estUntransmittedData is the maximum number of bytes the sends might not have put
 	// on the wire yet. A value of 0 or less means that we have already received all or
 	// more bytes than the application is requesting to read.
+	// 为啥如此计算，可能得查清楚该函数调用上下文才好分析清楚
+	// client准备读取n个字节，pendingUpdate为已读取的，因此不包含在内
+	// 因此该值表示预估还需要待传输的数据
 	estUntransmittedData := int32(n - f.pendingData) // Casting into int32 since it could be negative.
+
 	// This implies that unless we send a window update, the sender won't be able to send all the bytes
 	// for this message. Therefore we must send an update over the limit since there's an active read
 	// request from the application.
+	// 因为待传输的数据大于server 传输阈值，因此必须发送窗口更新报文，否则server会等待导致client无法及时接收数据
 	if estUntransmittedData > estSenderQuota {
 		// Sender's window shouldn't go more than 2^31 - 1 as specified in the HTTP spec.
 		if f.limit+n > maxWindowSize {
@@ -176,6 +184,7 @@ func (f *inFlow) maybeAdjust(n uint32) uint32 {
 // onData is invoked when some data frame is received. It updates pendingData.
 func (f *inFlow) onData(n uint32) error {
 	f.mu.Lock()
+	// 收到data frame 此时数据还未处理，因此增加到pendingData
 	f.pendingData += n
 	if f.pendingData+f.pendingUpdate > f.limit+f.delta {
 		limit := f.limit
@@ -191,6 +200,7 @@ func (f *inFlow) onData(n uint32) error {
 // to be sent to the peer.
 func (f *inFlow) onRead(n uint32) uint32 {
 	f.mu.Lock()
+	// 如果待读取数据量为空 因此直接返回0
 	if f.pendingData == 0 {
 		f.mu.Unlock()
 		return 0

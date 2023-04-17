@@ -161,6 +161,7 @@ func (gsb *Balancer) UpdateClientConnState(state balancer.ClientConnState) error
 	// Perform this call without gsb.mu to prevent deadlocks if the child calls
 	// back into the channel. The latest balancer can never be closed during a
 	// call from the channel, even without gsb.mu held.
+	// 调用实际的负载均衡 默认是pickfirst
 	return balToUpdate.UpdateClientConnState(state)
 }
 

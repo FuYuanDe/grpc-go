@@ -357,7 +357,7 @@ func (w *bufWriter) Flush() error {
 }
 
 type framer struct {
-	writer *bufWriter
+	writer *bufWriter // 写缓存
 	fr     *http2.Framer
 }
 

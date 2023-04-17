@@ -164,7 +164,7 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 		opt.apply(&cc.dopts)
 	}
 
-	/// TODO
+	// 拦截器
 	chainUnaryClientInterceptors(cc)
 	chainStreamClientInterceptors(cc)
 
@@ -174,6 +174,7 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 		}
 	}()
 
+	// metric相关
 	pid := cc.dopts.channelzParentID
 	cc.channelzID = channelz.RegisterChannel(&channelzChannel{cc}, pid, target)
 	ted := &channelz.TraceEventDesc{
@@ -189,6 +190,7 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 	channelz.AddTraceEvent(logger, cc.channelzID, 1, ted)
 	cc.csMgr.channelzID = cc.channelzID
 
+	// 安全相关
 	if cc.dopts.copts.TransportCredentials == nil && cc.dopts.copts.CredsBundle == nil {
 		return nil, errNoTransportSecurity
 	}
@@ -259,19 +261,17 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 		default:
 		}
 	}
-	/// TODO 默认的重试策略
+
 	if cc.dopts.bs == nil {
 		cc.dopts.bs = backoff.DefaultExponential
 	}
 
-	// Determine the resolver to use.
 	// 服务发现 没有scheme则返回默认的passthrough
 	resolverBuilder, err := cc.parseTargetAndFindResolver()
 	if err != nil {
 		return nil, err
 	}
 
-	// TODO
 	cc.authority, err = determineAuthority(cc.parsedTarget.Endpoint(), cc.target, cc.dopts)
 	if err != nil {
 		return nil, err
@@ -299,7 +299,7 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 		credsClone = creds.Clone()
 	}
 
-	// 负载均衡 启动一个监听线程
+	// 负载均衡
 	cc.balancerWrapper = newCCBalancerWrapper(cc, balancer.BuildOptions{
 		DialCreds:        credsClone,
 		CredsBundle:      cc.dopts.copts.CredsBundle,
@@ -321,6 +321,7 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 	cc.mu.Unlock()
 
 	// A blocking dial blocks until the clientConn is ready.
+	// 阻塞等待传输层建立完成，即可以收发数据
 	if cc.dopts.block {
 		for {
 			cc.Connect()
@@ -493,7 +494,7 @@ type ClientConn struct { // 一个虚拟连接，连接到实际的服务端节�
 	parsedTarget resolver.Target // See parseTargetAndFindResolver().
 	authority    string          // See determineAuthority().
 	dopts        dialOptions     // Default and user specified dial options.
-	// channelz 干啥用
+	// channelz 干啥用 > debug
 	channelzID *channelz.Identifier // Channelz identifier for the channel.
 	// 负载均衡
 	balancerWrapper *ccBalancerWrapper // Uses gracefulswitch.balancer underneath.
@@ -631,7 +632,7 @@ func (cc *ClientConn) maybeApplyDefaultServiceConfig(addrs []resolver.Address) {
 	}
 }
 
-// 更新服务发现状态 谁来通知？
+// 更新服务发现状态 谁来通知? resolver来通知
 func (cc *ClientConn) updateResolverState(s resolver.State, err error) error {
 	// 首次信号
 	defer cc.firstResolveEvent.Fire()
@@ -735,7 +736,7 @@ func (cc *ClientConn) handleSubConnStateChange(sc balancer.SubConn, s connectivi
 // Caller needs to make sure len(addrs) > 0.
 func (cc *ClientConn) newAddrConn(addrs []resolver.Address, opts balancer.NewSubConnOptions) (*addrConn, error) {
 	ac := &addrConn{
-		state:        connectivity.Idle,
+		state:        connectivity.Idle, // 默认闲置状态
 		cc:           cc,
 		addrs:        addrs,
 		scopts:       opts,
@@ -751,6 +752,7 @@ func (cc *ClientConn) newAddrConn(addrs []resolver.Address, opts balancer.NewSub
 		return nil, ErrClientConnClosing
 	}
 
+	// metric相关
 	var err error
 	ac.channelzID, err = channelz.RegisterSubChannel(ac, cc.channelzID, "")
 	if err != nil {
@@ -765,6 +767,7 @@ func (cc *ClientConn) newAddrConn(addrs []resolver.Address, opts balancer.NewSub
 		},
 	})
 
+	// 添加到地址映射表
 	cc.conns[ac] = struct{}{}
 	return ac, nil
 }
@@ -821,6 +824,7 @@ func (cc *ClientConn) incrCallsFailed() {
 // TODO(bar) Move this to the addrConn section.
 func (ac *addrConn) connect() error {
 	ac.mu.Lock()
+	// 已经关闭了无需再连接
 	if ac.state == connectivity.Shutdown {
 		if logger.V(2) {
 			logger.Infof("connect called on shutdown addrConn; ignoring.")
@@ -828,7 +832,7 @@ func (ac *addrConn) connect() error {
 		ac.mu.Unlock()
 		return errConnClosing
 	}
-	// 只有空闲状态的链接方能继续
+	// 只有空闲状态的链接方能继续,其它状态说明已经连接过了
 	if ac.state != connectivity.Idle {
 		if logger.V(2) {
 			logger.Infof("connect called on addrConn in non-idle state (%v); ignoring.", ac.state)
@@ -838,6 +842,7 @@ func (ac *addrConn) connect() error {
 	}
 	// Update connectivity state within the lock to prevent subsequent or
 	// concurrent calls from resetting the transport more than once.
+	// 先更改状态为连接中
 	ac.updateConnectivityState(connectivity.Connecting, nil)
 	ac.mu.Unlock()
 
@@ -879,6 +884,7 @@ func (ac *addrConn) tryUpdateAddrs(addrs []resolver.Address) bool {
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
 	channelz.Infof(logger, ac.channelzID, "addrConn: tryUpdateAddrs curAddr: %v, addrs: %v", ac.curAddr, addrs)
+	// 这几种状态表明还没有链接创建，因此可以直接替换地址
 	if ac.state == connectivity.Shutdown ||
 		ac.state == connectivity.TransientFailure ||
 		ac.state == connectivity.Idle {
@@ -886,15 +892,18 @@ func (ac *addrConn) tryUpdateAddrs(addrs []resolver.Address) bool {
 		return true
 	}
 
+	// 检查地址是否相同
 	if equalAddresses(ac.addrs, addrs) {
 		return true
 	}
 
+	// 地址不相同并且旧的地址处于正在连接中
 	if ac.state == connectivity.Connecting {
 		return false
 	}
 
 	// ac.state is Ready, try to find the connected address.
+	// 旧链接已经创建完成，检查是否和新地址存在相同的
 	var curAddrFound bool
 	for _, a := range addrs {
 		a.ServerName = ac.cc.getServerName(a)
@@ -1156,6 +1165,7 @@ func (ac *addrConn) adjustParams(r transport.GoAwayReason) {
 	}
 }
 
+// 重置传输层 应该是重新开始连接
 func (ac *addrConn) resetTransport() {
 	ac.mu.Lock()
 	// 已关闭则不处理
@@ -1187,6 +1197,7 @@ func (ac *addrConn) resetTransport() {
 	ac.updateConnectivityState(connectivity.Connecting, nil)
 	ac.mu.Unlock()
 
+	// 遍历所有地址，尝试创建链接
 	if err := ac.tryAllAddrs(addrs, connectDeadline); err != nil {
 		// 创建链接失败，是不是服务发现有问题啊，让它重新去发现下
 		ac.cc.resolveNow(resolver.ResolveNowOptions{})
@@ -1216,7 +1227,7 @@ func (ac *addrConn) resetTransport() {
 			timer.Stop()
 		case <-ac.ctx.Done():
 			timer.Stop()
-			return
+			return是ß
 		}
 
 		ac.mu.Lock()
@@ -1242,7 +1253,7 @@ func (ac *addrConn) tryAllAddrs(addrs []resolver.Address, connectDeadline time.T
 	var firstConnErr error
 	for _, addr := range addrs {
 		ac.mu.Lock()
-		// 啥场景下会shutdown？业务关闭
+		// 连接已关闭 则无需重试
 		if ac.state == connectivity.Shutdown {
 			ac.mu.Unlock()
 			return errConnClosing
@@ -1608,25 +1619,25 @@ func (cc *ClientConn) parseTargetAndFindResolver() (resolver.Builder, error) {
 
 	// 地址解析
 	parsedTarget, err := parseTarget(cc.target)
-	fmt.Printf("host:%v, path: %v\n", parsedTarget.URL.Host, parsedTarget.URL.Path)
 	if err != nil {
 		channelz.Infof(logger, cc.channelzID, "dial target %q parse failed: %v", cc.target, err)
 	} else {
 		// TODO
 		channelz.Infof(logger, cc.channelzID, "parsed dial target is: %+v", parsedTarget)
+		// 查找注册的服务发现
 		rb = cc.getResolver(parsedTarget.URL.Scheme)
 		if rb != nil {
 			cc.parsedTarget = parsedTarget
-			fmt.Printf("parsing succ\n")
 			return rb, nil
 		}
-		fmt.Printf("error parsing\n")
 	}
 
 	// We are here because the user's dial target did not contain a scheme or
 	// specified an unregistered scheme. We should fallback to the default
 	// scheme, except when a custom dialer is specified in which case, we should
 	// always use passthrough scheme.
+
+	// 使用默认的 passthrough
 	defScheme := resolver.GetDefaultScheme()
 	channelz.Infof(logger, cc.channelzID, "fallback to scheme %q", defScheme)
 	canonicalTarget := defScheme + ":///" + cc.target

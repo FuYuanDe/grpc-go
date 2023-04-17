@@ -70,6 +70,7 @@ func (b *pickfirstBalancer) ResolverError(err error) {
 
 // 更新cs状态
 // 服务发现更新后端地址列表
+// 客户端连接状态变更 比如地址有变化等等
 func (b *pickfirstBalancer) UpdateClientConnState(state balancer.ClientConnState) error {
 
 	if len(state.ResolverState.Addresses) == 0 {

@@ -73,6 +73,7 @@ func newCCBalancerWrapper(cc *ClientConn, bopts balancer.BuildOptions) *ccBalanc
 		closed:   grpcsync.NewEvent(),
 		done:     grpcsync.NewEvent(),
 	}
+	// 监听地址变更
 	go ccb.watcher()
 	ccb.balancer = gracefulswitch.NewBalancer(ccb, bopts)
 	return ccb
@@ -87,7 +88,7 @@ type ccStateUpdate struct {
 	ccs *balancer.ClientConnState
 }
 
-// 子连接状态变更
+// 连接状态变更
 type scStateUpdate struct {
 	sc    balancer.SubConn
 	state connectivity.State
@@ -107,7 +108,7 @@ type switchToUpdate struct {
 	name string
 }
 
-// 子连接变更 这里会出现啥情况
+// 子连接地址变更 > 比如服务发现解析地址为空 此时需要清空旧有地址
 type subConnUpdate struct {
 	acbw *acBalancerWrapper
 }
@@ -125,17 +126,28 @@ func (ccb *ccBalancerWrapper) watcher() {
 			if ccb.closed.HasFired() {
 				break
 			}
+			// 下面这些事件类型具体含义是啥？谁会来触发？
 			switch update := u.(type) {
+			// 客户端连接状态变更 应该是连接地址有变更，通常是服务发现提供了新的地址等等
+			// 调用实际的负载均衡处理地址变更
 			case *ccStateUpdate:
 				ccb.handleClientConnStateChange(update.ccs)
+			// 自连接状态变更 比如链接Ready, shutdown 等等
 			case *scStateUpdate:
 				ccb.handleSubConnStateChange(update)
+
+			// 啥场景、谁来通知
+			// 实际上调用addrConn去连接对端
 			case *exitIdleUpdate:
 				ccb.handleExitIdle()
+			// 啥场景、谁来通知
+			// 实际上调用负载均衡 更新picker
 			case *resolverErrorUpdate:
 				ccb.handleResolverError(update.err)
+			// 更新负载均衡 初始化的时候会调用 什么时机呢
 			case *switchToUpdate:
 				ccb.handleSwitchTo(update.name)
+			// 和scStateUpdate有何区别
 			case *subConnUpdate:
 				ccb.handleRemoveSubConn(update.acbw)
 			default:
@@ -314,11 +326,13 @@ func (ccb *ccBalancerWrapper) NewSubConn(addrs []resolver.Address, opts balancer
 	if len(addrs) <= 0 {
 		return nil, fmt.Errorf("grpc: cannot create SubConn with empty address list")
 	}
+
 	ac, err := ccb.cc.newAddrConn(addrs, opts)
 	if err != nil {
 		channelz.Warningf(logger, ccb.cc.channelzID, "acBalancerWrapper: NewSubConn: failed to newAddrConn: %v", err)
 		return nil, err
 	}
+	// 又封装了一层
 	acbw := &acBalancerWrapper{ac: ac, producers: make(map[balancer.ProducerBuilder]*refCountedProducer)}
 	acbw.ac.mu.Lock()
 	ac.acbw = acbw
@@ -371,7 +385,7 @@ func (ccb *ccBalancerWrapper) Target() string {
 	return ccb.cc.target
 }
 
-// acBalancerWrapper is a wrapper on top of ac for balancers.
+// acBalancerWrapper is a wrapper on top of ac(addressConn) for balancers.
 // It implements balancer.SubConn interface.
 type acBalancerWrapper struct {
 	mu        sync.Mutex
@@ -386,6 +400,7 @@ func (acbw *acBalancerWrapper) UpdateAddresses(addrs []resolver.Address) {
 		acbw.ac.cc.removeAddrConn(acbw.ac, errConnDrain)
 		return
 	}
+	// 返回更新成功与否
 	if !acbw.ac.tryUpdateAddrs(addrs) {
 		cc := acbw.ac.cc
 		opts := acbw.ac.scopts
@@ -422,6 +437,7 @@ func (acbw *acBalancerWrapper) UpdateAddresses(addrs []resolver.Address) {
 func (acbw *acBalancerWrapper) Connect() {
 	acbw.mu.Lock()
 	defer acbw.mu.Unlock()
+	// 异步创建链接
 	go acbw.ac.connect()
 }
 

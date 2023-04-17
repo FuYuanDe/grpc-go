@@ -44,18 +44,21 @@ var (
 func main() {
 	flag.Parse()
 	// Set up a connection to the server.
+	// 创建链接
 	conn, err := grpc.Dial(*addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}
 	defer conn.Close()
+	// 创建客户端
 	c := pb.NewGreeterClient(conn)
 
 	// Contact the server and print out its response.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
 	defer cancel()
 
-	for i := 0; i < 1; i++ {
+	for i := 0; i < 2; i++ {
+		// 发送请求
 		_, err := c.SayHello(ctx, &pb.HelloRequest{Name: strconv.Itoa(i)})
 		if err != nil {
 			log.Fatalf("could not greet: %v", err)

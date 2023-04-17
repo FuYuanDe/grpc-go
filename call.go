@@ -20,8 +20,6 @@ package grpc
 
 import (
 	"context"
-	"fmt"
-	"time"
 )
 
 // Invoke sends the RPC request on the wire and returns after response is
@@ -73,8 +71,6 @@ func invoke(ctx context.Context, method string, req, reply interface{}, cc *Clie
 		return err
 	}
 
-	fmt.Printf("sleep before send req\n")
-	time.Sleep(time.Second * time.Duration(5))
 	if err := cs.SendMsg(req); err != nil {
 		return err
 	}
